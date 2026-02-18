@@ -1,0 +1,195 @@
+// APP FLUTTER: INVENTARIO DE BODEGA
+// Proyecto base funcional (offline)
+
+import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+
+void main() {
+  runApp(const InventarioApp());
+}
+
+class InventarioApp extends StatelessWidget {
+  const InventarioApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Inventario Bodega',
+      theme: ThemeData(
+        primaryColor: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+      ),
+      home: const LoginPage(),
+    );
+  }
+}
+
+// ---------------- LOGIN ----------------
+class LoginPage extends StatelessWidget {
+  const LoginPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Inicio de Sesión')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextField(decoration: const InputDecoration(labelText: 'Usuario')),
+            TextField(
+              decoration: const InputDecoration(labelText: 'Contraseña'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const InventarioPage()),
+                );
+              },
+              child: const Text('Ingresar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------- BASE DE DATOS ----------------
+class DBHelper {
+  static Database? _db;
+
+  static Future<Database> get db async {
+    if (_db != null) return _db!;
+    _db = await initDB();
+    return _db!;
+  }
+
+  static Future<Database> initDB() async {
+    final path = join(await getDatabasesPath(), 'inventario.db');
+
+    return openDatabase(path, version: 1,
+        onCreate: (Database db, int version) async {
+      await db.execute('''
+        CREATE TABLE productos(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nombre TEXT,
+          tipo TEXT,
+          cantidad INTEGER
+        )
+      ''');
+    });
+  }
+
+  static Future<void> insertarProducto(Map<String, dynamic> producto) async {
+    final dbClient = await db;
+    await dbClient.insert('productos', producto);
+  }
+
+  static Future<List<Map<String, dynamic>>> obtenerProductos() async {
+    final dbClient = await db;
+    return await dbClient.query('productos');
+  }
+
+  static Future<void> actualizarCantidad(int id, int cantidad) async {
+    final dbClient = await db;
+    await dbClient.update(
+      'productos',
+      {'cantidad': cantidad},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+}
+
+// ---------------- INVENTARIO ----------------
+class InventarioPage extends StatefulWidget {
+  const InventarioPage({super.key});
+
+  @override
+  State<InventarioPage> createState() => _InventarioPageState();
+}
+
+class _InventarioPageState extends State<InventarioPage> {
+  List<Map<String, dynamic>> productos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    cargarProductos();
+  }
+
+  Future<void> cargarProductos() async {
+    final data = await DBHelper.obtenerProductos();
+    setState(() {
+      productos = data;
+    });
+  }
+
+  void agregarProducto() async {
+    await DBHelper.insertarProducto({
+      'nombre': 'Nuevo Producto',
+      'tipo': 'Seco',
+      'cantidad': 0,
+    });
+    cargarProductos();
+  }
+
+  void entradaProducto(Map<String, dynamic> producto) async {
+    int nuevaCantidad = producto['cantidad'] + 1;
+    await DBHelper.actualizarCantidad(producto['id'], nuevaCantidad);
+    cargarProductos();
+  }
+
+  void salidaProducto(Map<String, dynamic> producto) async {
+    if (producto['cantidad'] > 0) {
+      int nuevaCantidad = producto['cantidad'] - 1;
+      await DBHelper.actualizarCantidad(producto['id'], nuevaCantidad);
+      cargarProductos();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Inventario de Bodega')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: agregarProducto,
+        child: const Icon(Icons.add),
+      ),
+      body: ListView.builder(
+        itemCount: productos.length,
+        itemBuilder: (context, index) {
+          final producto = productos[index];
+          return Card(
+            margin: const EdgeInsets.all(8),
+            child: ListTile(
+              title: Text(producto['nombre']),
+              subtitle: Text(
+                  'Tipo: ${producto['tipo']} | Cantidad: ${producto['cantidad']}'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.remove),
+                    onPressed: () => salidaProducto(producto),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () => entradaProducto(producto),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
